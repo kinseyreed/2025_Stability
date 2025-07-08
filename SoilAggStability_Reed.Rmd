@@ -1,0 +1,1897 @@
+---
+title: "Actinobacteria: an overlooked source of soil aggregate stability?"
+author: "Reed Close, Kinsey"
+date: "2025-07-08"
+output: html_document
+---
+
+Analysis and supplementary materials for the manuscript "Actinobacteria: an overlooked source of soil aggregate stability?":
+
+Reed KC, LeMaster D, Schartiger R, Guthrie K, Kane J, Kotcon J, Morrissey EM. 2025. Actinobacteria: an overlooked source of soil aggregate stability?"
+
+Corresponding Author: Kinsey Close Reed
+School of Natural Resources and the Environment, Davis College of Agriculture and Natural Resources, West Virginia University, Morgantown, WV, USA
+kyreed@mail.wvu.edu
+ORCID ID: 0000-0001-5517-8664
+
+
+Install and load required packages
+```{r env set up, include=FALSE}
+
+#Clear Environment
+rm(list=ls()) 
+
+# ——— Install required packages if not already installed ———
+required_packages <- c(
+  "ARTool", "car", "caret", "compositions", "DHARMa", "EnvStats",
+  "emmeans", "esquisse", "elevatr", "ggridges", "ggdist", "ggmap",
+  "ggpubr", "ggrepel", "ggspatial", "glmnet", "janitor", "performance",
+  "patchwork", "raster", "rstatix", "sf", "svglite", "tigris",
+  "tidyverse", "viridis"
+)
+new_packages <- setdiff(required_packages, rownames(installed.packages()))
+if (length(new_packages) > 0) {
+  install.packages(new_packages)
+}
+
+
+
+# ——— Load required packages ———
+library(ARTool)      # ANOVA-type models
+library(car)         # Companion to Applied Regression
+library(caret)       # Repeated cross-validation, model training
+library(compositions) # Compositional data analysis
+library(DHARMa)      # Residual diagnostics for mixed models
+library(EnvStats)    # Environmental & ecological statistics
+library(emmeans)     # Estimated marginal means (post-hoc)
+library(esquisse)    # ggplot2 GUI
+library(elevatr)     # Elevation data via web APIs
+library(ggridges)    # Ridgeline plots
+library(ggdist)      # Visualizations of distributions
+library(ggmap)       # Maps in ggplot2
+library(ggpubr)      # ‘ggplot2’ based publication ready plots
+library(ggrepel)     # Smart text repelling for ggplot2
+library(ggspatial)   # Spatial layers in ggplot2
+library(glmnet)      # Lasso & ridge regression
+library(janitor)     # Data cleaning helpers
+library(performance) # Model performance checks
+library(patchwork)   # Compose ggplots
+library(raster)      # Raster data handling
+library(rstatix)     # Pipe-friendly statistical tests
+library(sf)          # Simple features for spatial data
+library(svglite)     # SVG graphics device
+library(tigris)      # Census TIGER/Line shapefiles
+library(tidyverse)   # Metapackage: dplyr, tidyr, ggplot2, forcats, etc.
+library(viridis)     # Color scales
+
+
+#Set Dplyr's Select Function as Default
+select<-dplyr::select
+```
+
+
+Data preparation
+```{r dataprep}
+data <-read_csv("data.csv", col_names=TRUE, trim_ws=TRUE)
+site_info <- read_csv("site_information.csv", col_names=TRUE, trim_ws=TRUE)
+
+#Q in 2022 only
+#make integers numeric 
+data <- data %>% mutate_if(is.integer, as.numeric)
+data$year <- as.factor(data$year)
+
+
+
+#Create Slaking Index called "stability" so get inverse (for reader clarity) and workable distribution
+
+data$stability <-log(data$slaking_index)*-1
+hist(data$stability)
+densityplot(data$stability)
+
+#will not remove remove Q from 2022 because looking at each year independently 
+
+#Euk and fungi log tranform
+densityplot((data$eukaryote))
+data$log_eukaryote <- log(data$eukaryote)
+densityplot((data$log_eukaryote))
+
+densityplot((data$fungi))
+data$log_fungi <- log(data$fungi)
+densityplot((data$log_fungi))
+
+
+#Subset by year
+
+data_2022 <- subset(data, year == 2022)
+data_2023 <- subset(data, year == 2023)
+
+```
+
+Supplemental Figure 1 - Site Location Map
+```{r SF1_map}
+
+# Retrieve US states (cartographic boundary version)
+wv <- states(cb = TRUE) %>%
+  filter(NAME == "West Virginia") %>%
+  st_transform(crs = 4326)  # WGS84 lat/lon
+
+# Data Frame with sample site coords
+#not provided to public for farmer privacy. Please reach out to the author if coordinates are requested.
+fig1 <- site_info
+samplesites <- fig1
+#note RF has 3 sites
+#SL not included. But is filtered out of dataset anyway
+#HH included when had been removed from dataset in some instances? 
+
+samplesites
+# Bounding box for WV
+wv_bbox <- st_bbox(wv)
+
+# Download elevation data (~90m resolution SRTM)
+elev <- get_elev_raster(locations = wv, z = 8, clip = "locations")
+
+# Convert to dataframe for ggplot
+elev_df <- as.data.frame(elev, xy = TRUE)
+names(elev_df)[3] <- "elevation"
+
+
+# Convert to sf object
+sites_sf <- st_as_sf(samplesites, coords = c("longitude", "latitude"), crs = 4326)
+#crs = 4326 sets the coordinate reference system to WGS84 lat/lon (EPSG:4326).
+
+
+# Create a new column 'site_color' that is "red" for A, B, D and "black" otherwise.
+sites_sf <- sites_sf %>%
+  mutate(site_color = if_else(FarmID %in% c("A", "B", "D"), "red", "black"))
+  
+sites_sf$site_color[sites_sf$FarmID == "Q"] <- "blue" #only in 2022 data set
+
+
+ggplot() +
+  # WV boundary polygon
+  geom_sf(data = wv, fill = "white", color = "black") +
+  
+  # Sample sites
+  geom_sf(data = sites_sf, aes(color = site_color), size = 3) + # aes(color = FarmID)
+  # Use the identity scale so the color values are taken lit
+   scale_color_identity() +
+  # Optional: scale bar & north arrow
+  annotation_scale(location = "bl", width_hint = 0.4) +  # scale bar in bottom-left
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         style = north_arrow_fancy_orienteering) +
+  
+  # Labels & theme
+  labs(title = "Sample Site Locations in West Virginia, USA",
+       color = "Site ID") +
+  theme_minimal(base_size = 14, base_family = "Helvetica") +
+  theme(
+    panel.grid.major = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+
+# Use WGS84 projection
+wv_wgs84 <- st_transform(wv, crs = 4326)
+
+# Download elevation (z = 8 is a good resolution for WV)
+elev <- get_elev_raster(locations = wv_wgs84, z = 8, clip = "locations")
+
+# Generate elevation contour lines every 200 meters (adjust as needed)
+contours <- rasterToContour(elev, levels = seq(0, 1600, by = 100))  # in meters
+contours_sf <- st_as_sf(contours)
+
+ggplot() +
+  # Elevation contours
+  geom_sf(data = contours_sf, aes(), color = "grey50", size = 0.3) +
+  
+  # WV boundary
+  geom_sf(data = wv_wgs84, fill = NA, color = "black", size = 0.8) +
+  
+  # Sample sites
+  geom_sf(data = sites_sf, aes(color = site_color), size = 3) +
+  scale_color_identity() +
+  
+  # North arrow and scale
+  annotation_scale(location = "bl", width_hint = 0.4) +
+  annotation_north_arrow(location = "bl", which_north = "true",
+                         style = north_arrow_fancy_orienteering) +
+  
+  # Labels & theme
+  labs(title = "Sample Site Locations",
+      # subtitle = "Contours derived from SRTM elevation (every 100 m)",
+       color = "Site ID") +
+  theme_minimal(base_size = 14, base_family = "Helvetica") +
+  theme(
+    panel.grid.major = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+ggsave("sitemap_elevation_contours.png")
+
+
+# Make sure sites_sf and elev have matching CRS
+sites_sf_proj <- st_transform(sites_sf, crs = crs(elev))
+
+# Extract elevation values for each point
+elev_values <- raster::extract(elev, sites_sf_proj)
+
+# Add elevation as a column to your sites data
+sites_sf$Elevation_m <- elev_values
+#write.csv(sites_sf, "sites_sf_elev.csv")
+
+
+ggsave("wv_sample_sites.png", width = 8, height = 6, dpi = 600)
+
+
+
+```
+
+
+Figure 2 - PLFA Biomass x soil stability scatterplots
+```{r F2}
+
+#removing outliers
+#tested for outliers further below by using simulateResiduals(fittedModel = m_simp22) and check_model(m_simp22)
+#came back up here to remove from whole dataset where relevant
+
+#L 2022 one replicate is an outlier for Act, GP, AMF, fungi (log)
+#I'd say safe to remove from 2022 dataset altogether
+#Others-
+#2022: D one replicate (gram_negative), A one replicate (Euk, super high but within trend)
+#2023: F one replicate (log_Fun), eukaryote has a few high values, but seems consistent and stays within trend? 
+
+#For mult. regression, remove for each where relevant and use drop.na()
+#For PCA, only needed to remove outlier for AMF, Act (only DS-L 22)
+#For Boxplot, make individual obs NA? 
+#For Ridge, make individual obs NA and drop.na()
+
+data_filt <- data %>%
+  filter(index != 6)  #removes one L rep 22 and 23
+
+#outliers in log_Euk 2023 
+
+densityplot(data_2023$log_eukaryote)
+#Clearly identifies whether the 3 largest points significantly deviate from the distribution.
+rosnerTest(data_2023$log_eukaryote, k = 3) #two of them 
+#i   Mean.i      SD.i     Value Obs.Num    R.i+1 lambda.i+1 Outlier
+#1 0 1.238579 0.4964266 2.8732256       9 3.292826   3.179900    TRUE
+#2 1 1.209389 0.4488535 2.6847133      35 3.286872   3.173022    TRUE
+#3 2 1.182565 0.4051672 0.1939207      13 2.440091   3.165989   FALSE
+
+
+# Replace a single outlier values with NA
+data_filt$gram_negative[data_filt$index == "28"] <- NA #D 22
+data_filt$log_eukaryote[data_filt$index == "33"] <- NA #A 22
+data_filt$eukaryote[data_filt$index == "33"] <- NA #A 22
+data_filt$log_eukaryote[data_filt$index == "69"] <- NA #I 23
+data_filt$log_eukaryote[data_filt$index == "95"] <- NA #B 23
+
+
+data_filt$log_fungi[data_filt$index == "86"] <- NA #QF-H 23
+data_filt$fungi[data_filt$index == "86"] <- NA #QF-H 23
+
+#all others seem good after removing above
+densityplot(data_2023$actinomycetes, na.rm = TRUE)
+
+densityplot(data_2023$log_fungi, na.rm = TRUE)
+rosnerTest(data_2023$actinomycetes, k = 1)
+
+densityplot(data_2023$actinomycetes, na.rm = TRUE)
+densityplot(data_2023$am_fungi, na.rm = TRUE)
+densityplot(data_2023$gram_positive, na.rm = TRUE)
+densityplot(data_2023$gram_negative, na.rm = TRUE)
+
+#no outliers in any
+densityplot(data_2022$log_eukaryote, na.rm = TRUE)
+rosnerTest(data_2022$log_eukaryote, k = 3)
+densityplot(data_2022$actinomycetes, na.rm = TRUE)
+rosnerTest(data_2022$actinomycetes, k = 1)
+densityplot(data_2022$am_fungi, na.rm = TRUE)
+rosnerTest(data_2022$am_fungi, k = 1)
+densityplot(data_2022$gram_positive, na.rm = TRUE)
+rosnerTest(data_2022$gram_positive, k = 1)
+
+densityplot(data_2022$gram_negative, na.rm = TRUE)
+densityplot(data_2022$log_fungi, na.rm = TRUE)
+
+
+#redo by year
+
+data_2022 <- subset(data_filt, year == 2022)
+data_2023 <- subset(data_filt, year == 2023)
+
+#Scatterplots are colored by year, and show sep Rsq for each year.
+#reg lm with only the one group
+
+#Actinobacteria 
+densityplot(data_2022$actinomycetes)
+m_simp22 <- lm(stability ~ actinomycetes, data = data_2022)
+summary(m_simp22) #p = ****
+ r2_22 <- summary(m_simp22)$adj.r.squared 
+ r2_22
+
+ simulationOutput22<- simulateResiduals(fittedModel = m_simp22)
+plot(simulationOutput22) 
+check_model(m_simp22) #DS-L was outlier for 2022 Actino
+
+m_simp23 <- lm(stability ~ actinomycetes, data = data_2023)
+summary(m_simp23) #p = ****
+r2_23 <- summary(m_simp23)$adj.r.squared
+r2_23
+simulationOutput23<- simulateResiduals(fittedModel = m_simp23)
+plot(simulationOutput23)  
+check_model(m_simp23)
+
+m_simp <- lm(stability ~ actinomycetes, data = data_filt)
+summary(m_simp) #p = ****
+r2_both <- summary(m_simp)$adj.r.squared 
+simulationOutput<- simulateResiduals(fittedModel = m_simp)
+plot(simulationOutput) 
+check_model(m_simp)
+
+# 2. Create labels for each R²
+label_spring <- paste0("2022 Adj.R² = ", round(r2_22, 3))
+label_fall   <- paste0("2023 Adj.R² = ", round(r2_23, 3))
+label_all    <- paste0("Comb. Adj.R² = ", round(r2_both, 3))
+
+plot_act <- ggplot(data = data_filt, aes(x = actinomycetes, y = stability, color = as.factor(year), size = om_perc)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(data = data_filt,
+              aes(x = actinomycetes, y = stability, color = as.factor(year)),
+              method = "lm",
+              se = FALSE,
+              inherit.aes = FALSE) +
+  geom_smooth(data = data_filt,
+              aes(x = actinomycetes, y = stability),
+                  method = "lm",
+              se = FALSE,
+              color = "black",
+              linetype = "dashed",
+              inherit.aes = FALSE) +
+
+  scale_size_continuous(range = c(1.5, 4.5)) +
+  scale_color_manual(values = c("2022" = "#1f77b4", "2023" = "darkorange")) +
+  labs(x = "Actinobacteria (nmol per g soil)", y = "Macroaggregate Stability Index",color = element_blank(), size = "% Org.Matter") +
+  
+  # 4. Annotate R² values
+  annotate("text", x = 13, y = 2.3, label = label_spring, color = "#1f77b4", size = 3.5) +
+  annotate("text", x = 13, y = 2.1, label = label_fall,   color = "darkorange", size = 3.5) +
+  annotate("text", x = 13, y = 1.9, label = label_all,    color = "black",  size = 3.5) +
+  
+  theme_classic(base_size = 10, base_family = "Helvetica") +
+  theme(
+    # Remove minor grid lines
+    panel.grid.minor = element_blank(),
+    # Black axis lines
+    axis.line = element_line(color = "black", size = 0.5),
+    # Ticks inside, slightly smaller
+    axis.ticks = element_line(color = "black", size = 0.5),
+    axis.ticks.length = unit(0.15, "cm"),
+    # Control margin around the plot
+    plot.margin = margin(5, 5, 5, 5),
+    # Legend
+    legend.position = "right",
+    legend.background = element_blank()
+  )
+plot_act
+
+
+#AMF
+m_amf_simp22 <- lm(stability ~ am_fungi, data = data_2022)
+summary(m_amf_simp22) #p = ****
+amf_r2_22 <- summary(m_amf_simp22)$adj.r.squared
+amf_r2_22
+simulationOutput22<- simulateResiduals(fittedModel = m_amf_simp22)
+plot(simulationOutput22) 
+check_model(m_amf_simp22) #DS-L outlier
+
+m_amf_simp23 <- lm(stability ~ am_fungi, data = data_2023)
+summary(m_amf_simp23) #p = ****
+amf_r2_23 <- summary(m_amf_simp23)$adj.r.squared 
+amf_r2_23
+simulationOutput<- simulateResiduals(fittedModel = m_amf_simp23)
+plot(simulationOutput) 
+check_model(m_amf_simp23) 
+
+m_amf_simp <- lm(stability ~ am_fungi, data = data_filt)
+summary(m_amf_simp) #p = ****
+amf_r2_both <- summary(m_amf_simp)$adj.r.squared #0.4782
+simulationOutput<- simulateResiduals(fittedModel = m_amf_simp)
+plot(simulationOutput) #good
+check_model(m_amf_simp) #good
+
+# 2. Create labels for each R²
+label_spring_amf <- paste0("2022 Adj.R² = ", round(amf_r2_22, 3))
+label_fall_amf   <- paste0("2023 Adj.R² = ", round(amf_r2_23, 3))
+label_all_amf    <- paste0("Comb. Adj.R² = ", round(amf_r2_both, 3))
+
+plot_amf <- ggplot(data = data_filt, aes(x = am_fungi, y = stability, color = as.factor(year), size = om_perc)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(data = data_filt,
+              aes(x = am_fungi, y = stability, color = as.factor(year)),
+              method = "lm",
+              se = FALSE,
+              inherit.aes = FALSE) +
+  geom_smooth(data = data_filt,
+              aes(x = am_fungi, y = stability),
+              method = "lm",
+              se = FALSE,
+              color = "black",
+              linetype = "dashed",
+              inherit.aes = FALSE) +
+  scale_size_continuous(range = c(1.5, 4.5)) +
+  scale_color_manual(values = c("2022" = "#1f77b4", "2023" = "darkorange")) +
+  labs(x = "AM fungi (nmol per g soil)", y = "Macroaggregate Stability Index",color = element_blank(), size = "% Org.Matter") +
+  
+  # 4. Annotate R² values
+  annotate("text", x = 4, y = 2.3, label = label_spring_amf, color = "#1f77b4", size = 3.5) +
+  annotate("text", x = 4, y = 2.1, label = label_fall_amf,   color = "darkorange", size = 3.5) +
+  annotate("text", x = 4, y = 1.9, label = label_all_amf,    color = "black",  size = 3.5) +
+
+  theme_classic(base_size = 10, base_family = "Helvetica") +
+  theme(
+    # Remove minor grid lines
+    panel.grid.minor = element_blank(),
+    # Black axis lines
+    axis.line = element_line(color = "black", size = 0.5),
+    # Ticks inside, slightly smaller
+    axis.ticks = element_line(color = "black", size = 0.5),
+    axis.ticks.length = unit(0.15, "cm"),
+    # Control margin around the plot
+    plot.margin = margin(5, 5, 5, 5),
+    # Legend
+    legend.position = "right",
+    legend.background = element_blank()
+  )
+plot_amf
+
+
+#Gram Negative
+
+m_gn_simp22 <- lm(stability ~ gram_negative, data = data_2022) #same with or without na.action=na.exclude
+summary(m_gn_simp22) #p = ****
+gn_r2_22 <- summary(m_gn_simp22)$adj.r.squared 
+gn_r2_22
+simulationOutput22<- simulateResiduals(fittedModel = m_gn_simp22)
+plot(simulationOutput22) 
+check_model(m_gn_simp22) #RF1-C outlier
+
+
+m_gn_simp23 <- lm(stability ~ gram_negative, data = data_2023)
+summary(m_gn_simp23) #p = ****
+gn_r2_23 <- summary(m_gn_simp23)$adj.r.squared 
+gn_r2_23
+simulationOutput <- simulateResiduals(fittedModel = m_gn_simp23)
+plot(simulationOutput) 
+check_model(m_gn_simp23) 
+
+m_gn_simp <- lm(stability ~ gram_negative, data = data_filt)
+summary(m_gn_simp) #p = ****
+gn_r2_both <- summary(m_gn_simp)$adj.r.squared 
+simulationOutput<- simulateResiduals(fittedModel = m_gn_simp)
+plot(simulationOutput) #?
+check_model(m_gn_simp) 
+
+# 2. Create labels for each R²
+gn_label_spring <- paste0("2022 Adj.R² = ", round(gn_r2_22, 3))
+gn_label_fall   <- paste0("2023 Adj.R² = ", round(gn_r2_23, 3))
+gn_label_all    <- paste0("Comb. Adj.R² = ", round(gn_r2_both, 3))
+
+plot_gn <- ggplot(data = data_filt, aes(x = gram_negative, y = stability, color = as.factor(year), size = om_perc)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(data = data_filt,
+              aes(x = gram_negative, y = stability, color = as.factor(year)),
+              method = "lm",
+              se = FALSE,
+              inherit.aes = FALSE) +
+  geom_smooth(data = data_filt,
+              aes(x = gram_negative, y = stability),
+              method = "lm",
+              se = FALSE,
+              color = "black",
+              linetype = "dashed",
+              inherit.aes = FALSE) +
+  scale_size_continuous(range = c(1.5, 4.5)) +
+  scale_color_manual(values = c("2022" = "#1f77b4", "2023" = "darkorange")) +
+  labs(x = "Gram-Negative Bacteria (nmol per g soil)", y = "Macroaggregate Stability Index",color = element_blank(), size = "% Org.Matter") +
+  
+  # 4. Annotate R² values
+  annotate("text", x = 33, y = 2.3, label = gn_label_spring, color = "#1f77b4", size = 3.5) +
+  annotate("text", x = 33, y = 2.1, label = gn_label_fall,   color = "darkorange", size = 3.5) +
+  annotate("text", x = 33, y = 1.9, label = gn_label_all,    color = "black",  size = 3.5) +
+  
+  theme_classic(base_size = 10, base_family = "Helvetica") +
+  theme(
+    # Remove minor grid lines
+    panel.grid.minor = element_blank(),
+    # Black axis lines
+    axis.line = element_line(color = "black", size = 0.5),
+    # Ticks inside, slightly smaller
+    axis.ticks = element_line(color = "black", size = 0.5),
+    axis.ticks.length = unit(0.15, "cm"),
+    # Control margin around the plot
+    plot.margin = margin(5, 5, 5, 5),
+    # Legend
+    legend.position = "right",
+    legend.background = element_blank()
+  )
+plot_gn
+
+#Gram Positive
+
+m_gp_simp22 <- lm(stability ~ gram_positive, data = data_2022)
+summary(m_gp_simp22) #p = ****
+gp_r2_22 <- summary(m_gp_simp22)$adj.r.squared 
+gp_r2_22 
+simulationOutput22<- simulateResiduals(fittedModel = m_gp_simp22)
+plot(simulationOutput22) 
+check_model(m_gp_simp22) #DS-L outlier
+
+
+m_gp_simp23 <- lm(stability ~ gram_positive, data = data_2023)
+summary(m_gp_simp23) #p = ****
+gp_r2_23 <- summary(m_gp_simp23)$adj.r.squared 
+gp_r2_23
+simulationOutput<- simulateResiduals(fittedModel = m_gp_simp23)
+plot(simulationOutput) 
+check_model(m_gp_simp23) 
+
+m_gp_simp <- lm(stability ~ gram_positive, data = data_filt)
+summary(m_gp_simp) #p = ****
+gp_r2_both <- summary(m_gp_simp)$adj.r.squared 
+simulationOutput<- simulateResiduals(fittedModel = m_gp_simp)
+plot(simulationOutput) 
+check_model(m_gp_simp) 
+
+# 2. Create labels for each R²
+gp_label_spring <- paste0("2022 Adj.R² = ", round(gp_r2_22, 3))
+gp_label_fall   <- paste0("2023 Adj.R² = ", round(gp_r2_23, 3))
+gp_label_all    <- paste0("Comb. Adj.R² = ", round(gp_r2_both, 3))
+
+plot_gp <- ggplot(data = data_filt, aes(x = gram_positive, y = stability, color = as.factor(year), size = om_perc)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(data = data_filt,
+              aes(x = gram_positive, y = stability, color = as.factor(year)),
+              method = "lm",
+              se = FALSE,
+              inherit.aes = FALSE) +
+  geom_smooth(data = data_filt,
+              aes(x = gram_positive, y = stability),
+              method = "lm",
+              se = FALSE,
+              color = "black",
+              linetype = "dashed",
+              inherit.aes = FALSE) +
+  scale_size_continuous(range = c(1.5, 4.5)) +
+  scale_color_manual(values = c("2022" = "#1f77b4", "2023" = "darkorange")) +
+  labs(x = "Gram-Positive Bacteria (nmol per g soil)", y = "Macroaggregate Stability Index",color = element_blank(), size = "% Org.Matter") +
+  
+  # 4. Annotate R² values
+  annotate("text", x = 22, y = 2.3, label = gp_label_spring, color = "#1f77b4", size = 3.5) +
+  annotate("text", x = 22, y = 2.1, label = gp_label_fall,   color = "darkorange", size = 3.5) +
+  annotate("text", x = 22, y = 1.9, label = gp_label_all,    color = "black",  size = 3.5) +
+  
+  theme_classic(base_size = 10, base_family = "Helvetica") +
+  theme(
+    # Remove minor grid lines
+    panel.grid.minor = element_blank(),
+    # Black axis lines
+    axis.line = element_line(color = "black", size = 0.5),
+    # Ticks inside, slightly smaller
+    axis.ticks = element_line(color = "black", size = 0.5),
+    axis.ticks.length = unit(0.15, "cm"),
+    # Control margin around the plot
+    plot.margin = margin(5, 5, 5, 5),
+    # Legend
+    legend.position = "right",
+    legend.background = element_blank()
+  )
+plot_gp
+
+
+#eukaryotes
+
+m_euk_simp22 <- lm(stability ~ log_eukaryote, data = data_2022)
+summary(m_euk_simp22) #p = **
+euk_r2_22 <- summary(m_euk_simp22)$adj.r.squared
+euk_r2_22
+simulationOutput22<- simulateResiduals(fittedModel = m_euk_simp22)
+plot(simulationOutput22) 
+check_model(m_euk_simp22) #RF2-L super high 
+
+
+m_euk_simp23 <- lm(stability ~ log_eukaryote, data = data_2023) #data_2023_euk
+summary(m_euk_simp23) #p = **
+euk_r2_23 <- summary(m_euk_simp23)$adj.r.squared 
+euk_r2_23
+simulationOutput<- simulateResiduals(fittedModel = m_euk_simp23)
+plot(simulationOutput) #good
+check_model(m_euk_simp23) 
+
+m_euk_simp <- lm(stability ~ log_eukaryote, data = data_filt)
+summary(m_euk_simp) #p = ****
+euk_r2_both <- summary(m_euk_simp)$adj.r.squared 
+simulationOutput<- simulateResiduals(fittedModel = m_euk_simp)
+plot(simulationOutput) #better
+check_model(m_euk_simp) #good
+
+# 2. Create labels for each R²
+euk_label_spring <- paste0("2022 Adj.R² = ", round(euk_r2_22, 3))
+euk_label_fall   <- paste0("2023 Adj.R² = ", round(euk_r2_23, 3))
+euk_label_all    <- paste0("Comb. Adj.R² = ", round(euk_r2_both, 3))
+
+plot_euk <- ggplot(data = data_filt, aes(x = log_eukaryote, y = stability, color = as.factor(year), size = om_perc)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(data = data_filt,
+              aes(x = log_eukaryote, y = stability, color = as.factor(year)),
+              method = "lm",
+              se = FALSE,
+              inherit.aes = FALSE) +
+  geom_smooth(data = data_filt,
+              aes(x = log_eukaryote, y = stability),
+              method = "lm",
+              se = FALSE,
+              color = "black",
+              linetype = "dashed",
+              inherit.aes = FALSE) +
+  scale_size_continuous(range = c(1.5, 4.5)) +
+  scale_color_manual(values = c("2022" = "#1f77b4", "2023" = "darkorange")) +
+  labs(x = "Eukaryotes log(nmol per g soil)", y = "Macroaggregate Stability Index",color = element_blank(), size = "% Org.Matter") +
+  
+  # 4. Annotate R² values
+  annotate("text", x = 0.1, y = 2.2, label = euk_label_spring, color = "#1f77b4", size = 3.5) +
+  annotate("text", x = 0.1, y = 2.0, label = euk_label_fall,   color = "darkorange", size = 3.5) +
+  annotate("text", x = 0.1, y = 1.8, label = euk_label_all,    color = "black",  size = 3.5) +
+  
+  theme_classic(base_size = 10, base_family = "Helvetica") +
+  theme(
+    # Remove minor grid lines
+    panel.grid.minor = element_blank(),
+    # Black axis lines
+    axis.line = element_line(color = "black", size = 0.5),
+    # Ticks inside, slightly smaller
+    axis.ticks = element_line(color = "black", size = 0.5),
+    axis.ticks.length = unit(0.15, "cm"),
+    # Control margin around the plot
+    plot.margin = margin(5, 5, 5, 5),
+    # Legend
+    legend.position = "right",
+    legend.background = element_blank()
+  )
+plot_euk
+
+
+#fungi
+
+
+m_fun_simp22 <- lm(stability ~ log_fungi, data = data_2022) #_fun
+summary(m_fun_simp22) #p = NS
+fun_r2_22 <- summary(m_fun_simp22)$adj.r.squared 
+fun_r2_22
+simulationOutput22<- simulateResiduals(fittedModel = m_fun_simp22)
+plot(simulationOutput22) 
+check_model(m_fun_simp22) #DS-L outlier 
+
+
+m_fun_simp23 <- lm(stability ~ log_fungi, data = data_2023) 
+summary(m_fun_simp23) #p = ** 0.008
+fun_r2_23 <- summary(m_fun_simp23)$adj.r.squared 
+fun_r2_23
+simulationOutput<- simulateResiduals(fittedModel = m_fun_simp23)
+plot(simulationOutput) 
+check_model(m_fun_simp23) #QF-H outlier
+
+m_fun_simp <- lm(stability ~ log_fungi, data = data_filt)
+summary(m_fun_simp) #p = ****
+fun_r2_both <- summary(m_fun_simp)$adj.r.squared
+simulationOutput<- simulateResiduals(fittedModel = m_fun_simp)
+plot(simulationOutput) 
+check_model(m_fun_simp) #fine
+
+# 2. Create labels for each R²
+fun_label_spring <- paste0("2022 Adj.R² = ", round(fun_r2_22, 3))
+fun_label_fall   <- paste0("2023 Adj.R² = ", round(fun_r2_23, 3))
+fun_label_all    <- paste0("Comb. Adj.R² = ", round(fun_r2_both, 3))
+
+
+fun_annotation <- annotation_custom(grid::textGrob(label = "example watermark",
+                                               x = unit(0.75, "npc"), y = unit(0.25, "npc"),
+                                               gp = grid::gpar(cex = 2)))
+
+
+plot_fun <- ggplot(data = data_filt, aes(x = log_fungi, y = stability, color = as.factor(year), size = om_perc)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(data = data_filt,
+              aes(x = log_fungi, y = stability, color = as.factor(year)),
+              method = "lm",
+              se = FALSE,
+              inherit.aes = FALSE) +
+  geom_smooth(data = data_filt,
+              aes(x = log_fungi, y = stability),
+              method = "lm",
+              se = FALSE,
+              color = "black",
+              linetype = "dashed",
+              inherit.aes = FALSE) +
+  scale_size_continuous(range = c(1.5, 4.5)) +
+  scale_color_manual(values = c("2022" = "#1f77b4", "2023" = "darkorange")) +
+  labs(x = "Fungi log(nmol per g soil)", y = "Macroaggregate Stability Index",color = element_blank(), size = "% Org.Matter") +
+  
+  # 4. Annotate R² values
+  annotate("text", x = 0.25, y = 2.2, label = fun_label_spring, color = "#1f77b4", size = 3.5) +
+  annotate("text", x = 0.25, y = 2.0, label = fun_label_fall,   color = "darkorange", size = 3.5) +
+  annotate("text", x = 0.25, y = 1.8, label = fun_label_all,    color = "black",  size = 3.5) +
+  
+  theme_classic(base_size = 10, base_family = "Helvetica") +
+  theme(
+    # Remove minor grid lines
+    panel.grid.minor = element_blank(),
+    # Black axis lines
+    axis.line = element_line(color = "black", size = 0.5),
+    # Ticks inside, slightly smaller
+    axis.ticks = element_line(color = "black", size = 0.5),
+    axis.ticks.length = unit(0.15, "cm"),
+    # Control margin around the plot
+    plot.margin = margin(5, 5, 5, 5),
+    # Legend
+    legend.position = "right",
+    legend.background = element_blank()
+  )
+plot_fun
+
+
+
+
+#all together
+ggarrange(plot_act,
+          plot_amf,
+          plot_gn,
+          plot_gp,
+          plot_fun,
+          plot_euk,
+          ncol = 2, nrow = 3,
+          labels = c("A", "B", "C", "D", "E", "F"),
+          common.legend = TRUE, legend = "right")
+
+#saved a bunch of ways
+#ggsave("multireg.png")
+#ggsave("multireg.eps")
+#ggsave("multireg.tiff")
+#ggsave("multireg.svg")
+#ggsave("multireg.pdf")
+
+
+
+```
+
+Supplemental Figure 2 - Soil Chemical and Biological Properties
+```{r SF2}
+
+selectedprops <- data_filt %>% 
+  dplyr::select(anon_id, stability,
+                om_perc, total_plfa_nmol_p_g_soil,
+                actinomycetes, am_fungi, 
+                gram_negative, gram_positive, eukaryote, fungi,
+                ph, cec_meq_100g,
+                p_lb_a, mg_lb_a, ca_lb_a, k_lb_a,
+                zn_ppm, b_ppm, cu_ppm, mn_ppm, fe_ppm,
+                so4_ppm,
+                year
+  )
+
+selectedprops$year <- as.factor(selectedprops$year)
+selectedprops$anon_id <- as.factor(selectedprops$anon_id)
+
+
+# 4. pivot to long form
+soil_vars <- setdiff(names(selectedprops), c("anon_id","year"))
+
+# 3. average the three replicates per farm × year
+summ_props <- selectedprops %>%
+  group_by(anon_id, year) %>%
+  summarize(across(all_of(soil_vars), mean, na.rm=TRUE), .groups="drop")
+
+# 4. compute unique farm order by overall mean OM
+
+om_order <- summ_props %>%
+  group_by(anon_id) %>%
+  summarize(mean_om = mean(om_perc, na.rm=TRUE), .groups="drop") %>%
+  arrange(desc(mean_om)) %>%
+  pull(anon_id)
+
+# 5. pivot & factor
+long_props <- summ_props %>%
+  # enforce farm ordering, then recode to letters
+  mutate(
+    id_ordered = factor(anon_id, levels = om_order),
+    year    = factor(year,    levels = c("2022", "2023"))
+  ) %>%
+  pivot_longer(
+    cols      = all_of(soil_vars),
+    names_to  = "Variable",
+    values_to = "Value"
+  ) %>%
+  # preserve the original soil‐var sequence
+  mutate(Variable = factor(Variable, levels = soil_vars))
+
+# 5. named labels for each facet
+var_labels <- c(
+  om_perc = "Organic matter (%)", ph       = "ph",
+  stability = "Macroaggregate stability index",         	
+  cec_meq_100g  = "CEC (mEq 100g)",
+  p_h = "ph",
+  p_lb_a   = "P (lb/Ac)",       mg_lb_a  = "Mg (lb/Ac)",
+  ca_lb_a  = "Ca (lb/Ac)",       k_lb_a   = "K (lb/Ac)",
+  zn_ppm   = "Zn (ppm)",          b_ppm    = "B (ppm)",
+  cu_ppm   = "Cu (ppm)",          mn_ppm   = "Mn (ppm)",
+  fe_ppm   = "Fe (ppm)",          so4_wvu  = "SO4 (ppm)",
+  total_plfa_nmol_p_g_soil   = "Total PLFAs (nmol per g soil)",
+  actinomycetes     = "Actinobacteria (nmol per g soil)",  am_fungi = "AM fungi (nmol per g soil)",
+  gram_positive      = "Gram-positive (nmol per g soil)", gram_negative   = "Gram-negative (nmol per g soil)",
+  eukaryote    = "Eukaryotes (nmol per g soil)",    fungi  = "Fungi (nmol per g soil)"
+)
+
+# 6. plot interaction panels
+# 5. plot with facet titles above each panel
+# 6. plot in grey40 / black, farms sorted by OM
+ggplot(long_props, aes(x = anon_id, Value, color=year, group=year)) +
+  geom_line(size=0.8) +
+  geom_point(size=2) +
+  facet_wrap(~ Variable, scales="free_y", ncol=3,
+             labeller = labeller(Variable = var_labels)) +
+  scale_color_manual(values = c("2022"="#1f77b4","2023"="darkorange")) +
+  theme_bw(base_size=11,base_family = "Helvetica") +
+  theme(
+    axis.text.x    = element_text(angle=45,hjust=1),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    strip.text     = element_text(face="bold", size=9)
+  ) +
+  labs(
+    x     = "Site",
+    y     = NULL,
+    color = "year"
+  )
+ggsave("suppfig2.png")
+
+#write.csv(long_props, "long_props.csv")
+#write.csv(summ_props, "summ_props.csv")
+
+```
+
+Supplemental Figure 3 - PCA of of standardized soil variables
+```{r SF3}
+
+#look at soil data as a whole 
+#esquisser(data)
+
+#for PCA will likely need to remove S site
+#S is such a strong outlier for most micronutrients since was a historical mine site
+
+soil_data <- data_filt %>% 
+  filter(anon_id != "S")
+
+
+#esquisser(soil_data)
+#note, looking at this for both years together
+#similar trends when looking at indiv years via esquisser
+
+
+densityplot(soil_data$p_lb_a) 
+soil_data$log_p <- log(soil_data$p_lb_a)
+densityplot(soil_data$log_p) #better
+
+densityplot(soil_data$mg_lb_a) 
+soil_data$log_mg <- log(soil_data$mg_lb_a)
+densityplot(soil_data$log_mg) #better
+
+densityplot(soil_data$ca_lb_a) 
+soil_data$log_ca <- log(soil_data$ca_lb_a)
+densityplot(soil_data$log_ca) #better
+
+densityplot(soil_data$k_lb_a) 
+soil_data$log_k <- log(soil_data$k_lb_a)
+densityplot(soil_data$log_k) #better
+
+densityplot(soil_data$zn_ppm) 
+soil_data$log_zn <- log(soil_data$zn_ppm)
+densityplot(soil_data$log_zn) #better
+
+densityplot(soil_data$fe_ppm) #already fine
+
+densityplot(soil_data$mn_ppm) #already fine
+
+densityplot(soil_data$b_ppm) 
+soil_data$log_b <- log(soil_data$b_ppm)
+densityplot(soil_data$log_b) #slightly better?
+
+densityplot(soil_data$cu_ppm) 
+soil_data$log_cu <- log(soil_data$cu_ppm)
+densityplot(soil_data$log_cu) #better
+
+densityplot(soil_data$so4_ppm) 
+soil_data$log_so4 <- log(soil_data$so4_ppm)
+densityplot(soil_data$log_so4) #better
+
+
+densityplot(soil_data$cec_meq_100g) #fine
+
+#will need to convert percent sand, silt, clay to composition object (since they are interdependent)
+
+soil_texture <- soil_data[, c("sand", "silt", "clay")]
+soil_texture_comp <- acomp(soil_texture)
+
+#CLR transformation
+soil_texture_clr <- clr(soil_texture_comp)
+
+# Optional: check result
+head(soil_texture_clr)
+
+colnames(soil_texture_clr) <- c("sand_clr", "silt_clr", "clay_clr") #diff names so no merge issues
+
+# 3. Combine with other variables for PCoA or modeling
+soil_data_clr <- cbind(soil_data, as.data.frame(soil_texture_clr))
+
+densityplot(soil_data_clr$sand_clr) #Fine
+densityplot(soil_data_clr$silt_clr) #Fine
+densityplot(soil_data_clr$clay_clr) #Fine
+
+
+
+#only cols for PCA
+soil_data_r <- soil_data_clr %>% 
+  dplyr::select(stability,
+         om_perc, 
+         actinomycetes, am_fungi, #all PLFA data are very collinear, only putting these two in since they are of particular interest to the hypothesis
+         ph, cec_meq_100g, #CEC may be redundant
+         log_p, log_mg, log_ca, log_k,
+         log_zn, log_b, log_cu, mn_ppm, fe_ppm,
+         log_so4,
+         sand_clr, silt_clr, clay_clr, 
+         bulk_density, #Bulk Density was measured once in 2022, use same for 2023 PCA
+         year
+  ) %>% na.omit() #removes Q farm, since did not have some measurements taken only in 2023
+
+
+# 3. Separate Predictors from Response
+predictors22 <- soil_data_r %>%
+  filter(year == "2022")
+
+predictors22 <- predictors22 %>%
+  dplyr::select( -year)
+
+predictors23 <- soil_data_r %>%
+  filter(year == "2023")
+
+predictors23 <- predictors23 %>%
+  dplyr::select( -year)
+
+# A named vector where the 'name' is the original variable
+# and the 'value' is the label you want to display
+predictor_labels <- c(
+  "stability" = "Stability",
+  "cec_meq_100g"  = "CEC",
+  "actinomycetes" = "Actino",
+  "am_fungi"       = "AMF",
+  "om_perc"        = "OM",
+  "sand_clr" = "Sand",
+  "silt_clr" = "Silt",
+  "clay_clr" = "Clay",
+  "log_p" = "P",
+  "log_mg" = "Mg",
+  "log_ca" = "Ca",
+  "log_k" = "K",
+  "log_zn" = "Zn",
+  "log_b" = "B",
+  "log_cu" = "Cu",
+  "log_so4" = "SO4",
+  "fe_ppm" = "Fe",
+  "mn_ppm" = "Mn",
+  "ph" = "ph",
+  "bulk_density" = "Bulk Density"
+)
+
+
+#Run PCA with Centering & Scaling
+# prcomp() automatically does mean-centering when center=TRUE,
+# and divides by SD when scale.=TRUE
+
+
+pca_result22 <- prcomp(predictors22, center = TRUE,  scale. = TRUE) #z score normalizes data
+pca_result23 <- prcomp(predictors23, center = TRUE, scale. = TRUE)
+
+#Extract PCA Scores (Samples) and Loadings (Variables)
+pca_scores23 <- as.data.frame(pca_result23$x)       # PC coordinates of each sample
+pca_scores23$stability <- predictors23$stability # Add soil stability for coloring
+
+pca_scores22 <- as.data.frame(pca_result22$x)       # PC coordinates of each sample
+pca_scores22$stability <- predictors22$stability # Add soil stability for coloring
+
+
+pca_loadings22 <- as.data.frame(pca_result22$rotation)  # Loadings (arrows) for each variable
+pca_loadings22$Variable <- rownames(pca_loadings22)
+pca_loadings22$Label <- predictor_labels[pca_loadings22$Variable]
+
+pca_loadings23 <- as.data.frame(pca_result23$rotation)  # Loadings (arrows) for each variable
+pca_loadings23$Variable <- rownames(pca_loadings23)
+pca_loadings23$Label <- predictor_labels[pca_loadings23$Variable]
+
+#Compute Variance Explained by PC1 and PC2 (for plot labels)
+var_explained22 <- pca_result22$sdev^2 / sum(pca_result22$sdev^2)
+pc1_var22 <- round(var_explained22[1] * 100, 1)
+pc2_var22 <- round(var_explained22[2] * 100, 1)
+
+
+var_explained23 <- pca_result23$sdev^2 / sum(pca_result23$sdev^2)
+pc1_var23 <- round(var_explained23[1] * 100, 1)
+pc2_var23 <- round(var_explained23[2] * 100, 1)
+
+#for only showing highest corr vectors
+# Calculate correlation of each original variable with PC1 and PC2
+# Get original variables (scaled and centered)
+scaled_22 <- scale(predictors22)
+scaled_23 <- scale(predictors23)
+
+# Correlation of original variables with PCs (scores)
+cor_PC1 <- abs(cor(scaled_22, pca_scores22$PC1))
+cor_PC2 <- abs(cor(scaled_22, pca_scores22$PC2))
+
+cor_PC1_23 <- abs(cor(scaled_23, pca_scores23$PC1))
+cor_PC2_23 <- abs(cor(scaled_23, pca_scores23$PC2))
+# Combine correlations and find the top ones
+
+cor_matrix <- data.frame(Variable = rownames(cor_PC1), 
+                         PC1 = cor_PC1[,1], 
+                         PC2 = cor_PC2[,1])
+
+cor_matrix23 <- data.frame(Variable = rownames(cor_PC1_23), 
+                         PC1 = cor_PC1_23[,1], 
+                         PC2 = cor_PC2_23[,1])
+
+#cor not abs for discussion
+cor_PC1_notabs <- cor(scaled_22, pca_scores22$PC1)
+cor_PC2_notabs <- cor(scaled_22, pca_scores22$PC2)
+
+cor_PC1_23_notabs <- cor(scaled_23, pca_scores23$PC1)
+cor_PC2_23_notabs <- cor(scaled_23, pca_scores23$PC2)
+# Combine correlations and find the top ones
+
+cor_matrix_notabs <- data.frame(Variable = rownames(cor_PC1_notabs), 
+                         PC1 = cor_PC1_notabs[,1], 
+                         PC2 = cor_PC2_notabs[,1])
+
+cor_matrix23_notabs <- data.frame(Variable = rownames(cor_PC1_23_notabs), 
+                           PC1 = cor_PC1_23_notabs[,1], 
+                           PC2 = cor_PC2_23_notabs[,1])
+
+#wrote files
+
+#write.csv(cor_matrix, "cor_matrix_22_pca.csv")
+#write.csv(cor_matrix23, "cor_matrix_23_pca.csv")
+#write.csv(cor_matrix_notabs, "cor_matrix_22_pca_notabs.csv")
+#write.csv(cor_matrix23_notabs, "cor_matrix_23_pca_notabs.csv")
+
+# Choose a threshold or top N variables
+cor_matrix$MaxCorr <- pmax(cor_matrix$PC1, cor_matrix$PC2)
+cor_matrix23$MaxCorr <- pmax(cor_matrix23$PC1, cor_matrix23$PC2)
+# For example, keep top 16 variables by max correlation
+top_vars <- head(cor_matrix[order(-cor_matrix$MaxCorr), ], 16)$Variable
+top_vars23 <- head(cor_matrix23[order(-cor_matrix23$MaxCorr), ], 16)$Variable
+
+# Filter pca_loadings22 to only keep top_vars
+pca_loadings22_top <- subset(pca_loadings22, Variable %in% top_vars)
+pca_loadings23_top <- subset(pca_loadings23, Variable %in% top_vars23)
+
+#Plotting
+#    - Points = samples, colored by 'stability'
+#    - Arrows = loadings for each predictor variable
+#    - geom_text_repel to label vectors
+
+
+#2022
+
+pca22 <- ggplot(pca_scores22, aes(x = PC1, y = PC2, color = stability)) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_color_viridis()+
+  #scale_color_gradient(low = "blue", high = "red") +
+  geom_segment(
+    data = pca_loadings22_top,
+    aes(x = 0, y = 0, xend = PC1 * 8, yend = PC2 * 8),
+    arrow = arrow(length = unit(0.3, "cm")), 
+    color = "darkgrey",
+    inherit.aes = FALSE
+  ) +
+  geom_text_repel(
+    data = pca_loadings22_top,
+    aes(x = PC1 * 8.4, y = PC2 * 8.4, label = Label),
+    size = 3, fontface = "bold",
+   # box.padding   = 0.6,  # how much space around the text box
+    #point.padding = 0.8,  # how much space around the point
+    inherit.aes = FALSE
+  ) +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "2022",
+    x = paste0("PC1 (", pc1_var22, "%)"),
+    y = paste0("PC2 (", pc2_var22, "%)"),
+    color = "Stability"
+  ) +
+  theme(base.family = "Helvetica",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+pca22
+
+#2023
+
+pca23 <- ggplot(pca_scores23, aes(x = PC1, y = PC2, color = stability)) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_color_viridis()+
+  #scale_color_gradient(low = "blue", high = "red") +
+  geom_segment(
+    data = pca_loadings23_top,
+    aes(x = 0, y = 0, xend = PC1 * 8, yend = PC2 * 8),
+    arrow = arrow(length = unit(0.3, "cm")), 
+    color = "darkgrey",
+    inherit.aes = FALSE
+  ) +
+  geom_text_repel(
+    data = pca_loadings23_top,
+    aes(x = PC1 * 8.2, y = PC2 * 8.2, label = Label),
+    size = 3,
+    fontface = "bold",
+    nudge_x = 0, 
+    nudge_y = 0,
+    direction = "both",
+    segment.color = NA,  # no line from label to point
+    max.overlaps = Inf,
+    box.padding = 0.15,   # smaller space around label box
+    point.padding = 0.1,
+    force = 2, 
+    inherit.aes = FALSE
+  ) +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "2023",
+    x = paste0("PC1 (", pc1_var23, "%)"),
+    y = paste0("PC2 (", pc2_var23, "%)"),
+    color = "Stability"
+  ) +
+  theme(base.family = "Helvetica",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+
+pca_plot <- ggarrange(pca22,
+          pca23,
+          ncol = 2, nrow = 1,
+          labels = c("A", "B"),
+          common.legend = TRUE, legend = "right")
+pca_plot
+
+
+
+#ggsave("pca_soil_stability.png", pca_plot,  dpi = 600)
+#ggsave("pca_soil_stability.eps", pca_plot,dpi = 600)
+#ggsave("pca_soil_stability.tiff", pca_plot,  dpi = 600)
+#ggsave("pca_soil_stability.svg", pca_plot, dpi = 600)
+
+#save PCA scores
+#write.csv(pca_scores22, "pca_scores22.csv")
+#write.csv(pca_scores23, "pca_scores23.csv")
+#write reduced data
+#write.csv(soil_data_r, "soil_data_red_PCA.csv")
+
+```
+
+Figure 1 - Boxplots and scatterplot, some statistics
+```{r F1}
+
+boxplot.data <- data_filt %>%
+  pivot_longer(cols = c( "actinomycetes", "am_fungi", "gram_negative", "gram_positive", "eukaryote", "fungi"), names_to = "PLFA_Group", values_to = "nmol.p.g.soil")
+#"total_plfa_nmol_p_g_soil", Not including because not really referenced in text, and makes scale too large to see smaller groups
+
+#format factors 
+boxplot.data$PLFA_Group <- as.factor(boxplot.data$PLFA_Group)
+boxplot.data$year <- factor(boxplot.data$year)
+# Remove rows with NA in key columns
+boxplot.cleaned <- boxplot.data %>%
+  filter(!is.na(nmol.p.g.soil),
+         !is.na(PLFA_Group),
+         !is.na(year),
+         !is.na(anon_id))
+
+# Fit the nonparametric model
+art_model <- art(nmol.p.g.soil ~ PLFA_Group * year + (1 | anon_id), data = boxplot.cleaned) 
+
+# 2. Extract the aligned model for the interaction
+art_interaction <- artlm(art_model, "PLFA_Group:year")
+
+# Post-hoc: all PLFA_Group × year comparisons
+emms_full <- emmeans(art_interaction, ~ PLFA_Group * year)
+pairs_full <- contrast(emms_full, method = "pairwise", adjust = "fdr")
+
+# PLFA Group comparisons within each year
+pairs_group_within_year <- emmeans(art_interaction, pairwise ~ PLFA_Group | year, adjust = "fdr")
+
+# year comparisons within each PLFA Group
+pairs_year_within_group <- emmeans(art_interaction, pairwise ~ year | PLFA_Group, adjust = "fdr")
+
+
+# Convert to data frames
+df_full <- as.data.frame(pairs_full)
+df_group_within_year <- as.data.frame(pairs_group_within_year$contrasts)
+df_year_within_group <- as.data.frame(pairs_year_within_group$contrasts)
+
+# Optional: Add significance stars
+get_stars <- function(p) {
+  ifelse(p < 0.0001, "****",
+         ifelse(p < 0.001, "***",
+         ifelse(p < 0.01, "**",
+                ifelse(p < 0.05, "*", "ns"))))
+}
+
+df_full$Signif <- get_stars(df_full$p.value)
+df_group_within_year$Signif <- get_stars(df_group_within_year$p.value)
+df_year_within_group$Signif <- get_stars(df_year_within_group$p.value)
+
+
+# Export to CSV
+#write.csv(df_full, "PostHoc_Full_Interaction.csv", row.names = FALSE)
+#write.csv(df_group_within_year, "PostHoc_Within_year_By_Group.csv", row.names = FALSE)
+#write.csv(df_year_within_group, "PostHoc_Within_Group_By_year.csv", row.names = FALSE)
+
+
+#View results
+summary(art_model)
+anova_res<- anova(art_model) #all sig 
+anova_res
+
+#F is off the charts, probably not actually 0 but REALLY small
+#write.csv(anova_res, "ART_anova_result.csv")
+
+# Extract F values and p-values
+f_vals <- round(anova_res$F, 2)
+p_vals <- anova_res$`Pr(>F)`
+
+# Get significance stars
+stars <- sapply(p_vals, function(p) {
+  if (p < 0.0001) return("****")
+  else if (p < 0.001) return("***")
+  else if (p < 0.01) return("**")
+  else if (p < 0.05) return("*")
+  else return("ns")
+})
+
+# Compose annotation text
+annotation_text <- paste0(
+ #"nmol PLFA ~ PLFA Group * Year + (1 | SiteID)", "\n",
+  "Group: F=", f_vals[1], stars[1], "\n",
+  "Year: F=", f_vals[2], stars[2], "\n",
+  "Group × Year: F=", f_vals[3], stars[3]
+)
+
+
+#pairwise wilcoxon rank-sum test with multiple test corrextion
+wilc.boxplot <- boxplot.cleaned %>%
+  group_by(year) %>%
+  wilcox_test(nmol.p.g.soil ~ PLFA_Group) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance()
+
+#write.csv(wilc.boxplot, "wilc.boxplot.csv")
+
+
+boxplot.cleaned <- boxplot.cleaned %>%
+  mutate(PLFA_Group = fct_recode(PLFA_Group,
+                                 "Actinobacteria" = "actinomycetes",
+                                 "Gram-Negative\n Bacteria" = "gram_negative",
+                                 "AM Fungi" = "am_fungi",
+                                 "Gram-Positive\n Bacteria" = "gram_positive",
+                                 "Eukaryote" = "eukaryote",
+                                 "Fungi" = "fungi"
+                                 #"Total PLFA" = "total_plfa_nmol_p_g_soil" #can add if desired
+  ))
+
+#reorder based on descending value
+boxplot.cleaned <- boxplot.cleaned %>%
+  mutate(PLFA_Group = fct_reorder(
+    PLFA_Group,
+    nmol.p.g.soil,
+    .fun    = median,
+    .desc   = TRUE
+  ))
+
+# First, calculate the max position dynamically with extra padding
+y_positions <- boxplot.cleaned %>%
+  group_by(PLFA_Group) %>%
+  summarise(y_max = max(nmol.p.g.soil, na.rm = TRUE)) %>%
+  mutate(y_pos = y_max + 0.1 * max(y_max)) # Add padding (10% of max value)
+
+#Merge positions with original data
+boxplot.cleaned <- boxplot.cleaned %>%
+  left_join(y_positions, by = "PLFA_Group")
+
+#Fig 1 Plot D
+plfa_plot <- ggplot(boxplot.cleaned, aes(x = PLFA_Group, 
+                                      y = nmol.p.g.soil, fill = year)) +
+  geom_boxplot(alpha = 0.8) +
+  annotate("text", x = Inf, y = Inf, label = annotation_text,
+           hjust = 1.1, vjust = 1.5, size = 4.5, fontface = "italic") +
+  scale_fill_manual(values = c("2022"="#1f77b4","2023"="darkorange")) +
+  labs(y = "nmol PLFA per g soil", x = "PLFA Group", fill = "year") +
+  theme_classic(base_family = "Helvetica") +
+  stat_compare_means(aes(group = year), method = "wilcox", label = "p.signif",
+                     label.y = y_positions$y_pos, size = 5, vjust = 0.5) +
+  theme(
+    legend.position = "top",
+    text = element_text(size = 14),
+    # axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+plfa_plot
+
+#ggsave("boxplot.png")
+#ggsave("boxplot.tiff")
+#ggsave("boxplot.eps")
+#ggsave("boxplot.svg")
+
+#write.csv(boxplot.cleaned, "boxplot.cleaned.csv")
+
+#OM plot; Figure 1B
+om_plot <- ggplot(data_filt, aes(x = year, y = om_perc, fill = year)) +
+  geom_boxplot(width = 0.5, alpha = 0.8) +
+  scale_fill_manual(values = c("2022"="#1f77b4","2023"="darkorange")) +
+  stat_compare_means(method = "wilcox", label = "p.signif", 
+                     label.y = max(data_filt$om_perc, na.rm = TRUE) * 1.001,
+                     size = 5, hjust = -1) +
+  labs(y = "Organic Matter (%)", x = "") +
+  theme_classic(base_family = "Helvetica") +
+  theme(
+    legend.position = "none",
+    text = element_text(size = 14),
+    plot.title = element_text(margin = margin(b = 5))
+  )
+om_plot
+
+#Stability Plot Fig 1 A
+stability_plot <- ggplot(data_filt, aes(x = year, y = stability, fill = year)) +
+  geom_boxplot(width = 0.5, alpha = 0.8) +
+  scale_fill_manual(values = c("2022"="#1f77b4","2023"="darkorange")) +
+  stat_compare_means(method = "wilcox", label = "p.signif", 
+                     label.y = max(data_filt$stability, na.rm = TRUE) * 1.001,
+                     size = 5, hjust = -1) +
+  labs(y = "Macroaggregate Stability Index", x = "") +
+  theme_classic(base_family = "Helvetica") +
+  theme(
+    legend.position = "none",
+    text = element_text(size = 14),
+    plot.title = element_text(margin = margin(b = 5))
+  )
+stability_plot
+
+
+#stability by OM plot like other scatters; Figure 1C
+
+data.filt22 <- data_filt %>%
+  filter(year == 2022)
+
+data.filt23 <- data_filt %>%
+  filter(year == 2023)
+
+stability22 <- lm(stability ~ om_perc, data = data.filt22)
+stab_r2_22 <- summary(stability22)$adj.r.squared
+stab_r2_22 #0.4416
+
+
+stability23 <- lm(stability ~ om_perc, data = data.filt23)
+stab_r2_23 <- summary(stability23)$adj.r.squared
+stab_r2_23 #0.3199
+
+
+stab.both <- lm(stability ~ om_perc, data = data_filt)
+stab.both.r2 <- summary(stab.both)$adj.r.squared 
+stab.both.r2 #0.4830
+
+# 2. Create labels for each R²
+st_label_spring <- paste0("2022 Adj.R² = ", round(stab_r2_22 , 3))
+st_label_fall   <- paste0("2023 Adj.R² = ", round(stab_r2_23 , 3))
+st_label_all    <- paste0("Comb. Adj.R² = ", round(stab.both.r2 , 3))
+
+stbXom.plot <- ggplot(data = data_filt, aes(x = om_perc, y = stability, color = as.factor(year))) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(data = data_filt,
+              aes(x = om_perc, y = stability, color = as.factor(year)),
+              method = "lm",
+              se = FALSE,
+              inherit.aes = FALSE) +
+  geom_smooth(data = data_filt,
+              aes(x = om_perc, y = stability),
+              method = "lm",
+              se = FALSE,
+              color = "black",
+              linetype = "dashed",
+              inherit.aes = FALSE) +
+  scale_size_continuous(range = c(1, 5.5)) +
+  scale_color_manual(values = c("2022"="#1f77b4","2023"="darkorange")) +
+  labs(x = "Organic Matter (%)", y = "Macroaggregate Stability Index",color = element_blank()) +
+  
+  # 4. Annotate R² values
+  annotate("text", x = 4, y = 2.3, label = st_label_spring, color = "#1f77b4", size = 4) +
+  annotate("text", x = 4, y = 2.1, label = st_label_fall,   color = "darkorange", size = 4) +
+  annotate("text", x = 4, y = 1.9, label = st_label_all,    color = "black",  size = 4) +
+  
+  theme_classic(base_size = 9, base_family = "Helvetica") +
+  theme(
+    legend.position = "none",
+    text = element_text(size = 14),
+    plot.title = element_text(margin = margin(b = 5))
+  )
+
+stbXom.plot
+
+
+# Combine side by side
+# Combine using patchwork
+
+#Figure 1
+Figure1_All <- (stability_plot | om_plot | stbXom.plot) / plfa_plot +
+  plot_layout(heights = c(1.3, 2)) +  # make second row taller
+  plot_annotation(tag_levels = 'A')
+
+(stability_plot | om_plot | stbXom.plot) / plfa_plot +
+  plot_layout(heights = c(1.3, 2)) +  # make second row taller
+  plot_annotation(tag_levels = 'A')
+
+#ggsave(
+ # filename = "fig1patchwork_col_diffsize.png",
+#  plot = Figure1_All
+#)
+
+#ggsave(
+ # filename = "fig1patchwork_col_diffsize.tiff",
+  #plot = Figure1_All
+#)
+
+
+#% increases for text
+
+# 1. Overall % change between year‐means
+year_means <- boxplot.data %>%
+  filter(!is.na(stability), !is.na(om_perc), !is.na(total_plfa_nmol_p_g_soil)) %>%
+  group_by(year) %>%
+  summarise(across(
+    c(stability, om_perc, total_plfa_nmol_p_g_soil),
+    ~ mean(.x, na.rm = TRUE)
+  ))
+
+
+# compute overall pct change (2023 vs 2022)
+overall_pct <- year_means %>%
+  pivot_wider(names_from = year, values_from = c(stability, om_perc, total_plfa_nmol_p_g_soil)) %>%
+  transmute(
+    stability_pct   = (stability_2023 - stability_2022) / abs(stability_2022) * 100,
+    om_perc_pct      = (om_perc_2023   - om_perc_2022)   / om_perc_2022   * 100,
+    TotalPLFA_pct   = (total_plfa_nmol_p_g_soil_2023 - total_plfa_nmol_p_g_soil_2022) /
+      total_plfa_nmol_p_g_soil_2022 * 100
+  )
+overall_pct
+
+#for PLFA groups
+# 1. Grand‐mean % change per PLFA group
+group_means <- boxplot.data %>%
+  filter(!is.na(nmol.p.g.soil)) %>%
+  group_by(PLFA_Group, year) %>%
+  summarise(mean_abund = mean(nmol.p.g.soil, na.rm = TRUE), .groups="drop")
+
+group_pct_change <- group_means %>%
+  pivot_wider(names_from = year, values_from = mean_abund, 
+              names_prefix = "mean_") %>%
+  mutate(pct_change = (mean_2023 - mean_2022) / mean_2022 * 100) %>%
+  arrange(desc(pct_change))
+
+# 2. Average of per‐plot % change per PLFA group
+per_plot_group <- boxplot.data %>%
+  filter(!is.na(nmol.p.g.soil)) %>%
+  group_by(anon_id, PLFA_Group, year) %>%
+  summarise(plot_mean = mean(nmol.p.g.soil, na.rm = TRUE), .groups="drop") %>%
+  pivot_wider(names_from = year, values_from = plot_mean, 
+              names_prefix = "plot_") %>%
+  mutate(pct_change = (plot_2023 - plot_2022) / plot_2022 * 100) 
+
+group_plot_pct <- per_plot_group %>%
+  group_by(PLFA_Group) %>%
+  summarise(mean_pct_change = mean(pct_change, na.rm = TRUE),
+            sd_pct_change   = sd(pct_change,   na.rm = TRUE),
+            n_plots         = sum(!is.na(pct_change)), .groups="drop") %>%
+  arrange(desc(mean_pct_change))
+
+# View results
+group_pct_change #use this to match other
+group_plot_pct
+
+#plfa group relative abundances for text
+
+#using total assigned PLFAs (not including 25% ish of unassigned PLFAs)
+rel_summary <- boxplot.data %>%
+  # 1. Calculate each group’s % of its plot’s total PLFA
+  group_by(anon_id, year) %>%
+  mutate(
+    total_PLFA = sum(nmol.p.g.soil, na.rm = TRUE),
+    rel_abund  = nmol.p.g.soil / total_PLFA * 100
+  ) %>%
+  ungroup() %>%
+  
+  # 2. Mean relative abundance by group & year
+  group_by(PLFA_Group, year) %>%
+  summarise(
+    mean_rel = mean(rel_abund, na.rm = TRUE),
+    sd_rel   = sd(rel_abund,   na.rm = TRUE),
+    .groups  = "drop"
+  ) %>%
+  
+  # 3. Pivot to wide with clear names
+  pivot_wider(
+    names_from  = year,
+    values_from = c(mean_rel, sd_rel),
+    names_sep   = "_"
+  ) %>%
+  
+  # 4. Compute the average of the two year‐means
+  mutate(
+    mean_rel_both = (mean_rel_2022 + mean_rel_2023) / 2
+  ) %>%
+  arrange(desc(mean_rel_both))
+
+rel_summary #interesting, proportions largely stayed the same. 
+#combined AMR, euk, fungi
+5.47 + 2.83 + 2.37 #10.67
+
+
+```
+
+Figure 3 - Ridge regression and coefficient ridgeplots
+```{r F3}
+set.seed(2026)
+
+# Function for bootstrap ridge regression
+bootstrap_ridge <- function(X, y, n_boot = 1000, alpha_val = 0) {
+  
+  # First, fit one model to get correct variable names
+  fit0 <- cv.glmnet(X, y, alpha = alpha_val)
+  best_lambda0 <- fit0$lambda.min
+  
+  # Safe way to extract coefficients excluding intercept
+  coef_vector0 <- coef(fit0, s = best_lambda0)
+  coef_vector0 <- coef_vector0[setdiff(rownames(coef_vector0), "(Intercept)"), , drop = FALSE]
+  
+  coef_names <- rownames(coef_vector0)
+  
+  # Initialize coefficient matrix with correct names
+  coefs <- matrix(NA, nrow = n_boot, ncol = length(coef_names))
+  colnames(coefs) <- coef_names
+  
+  # Run bootstrap loop
+  for (i in 1:n_boot) {
+    idx <- sample(1:nrow(X), replace = TRUE)
+    X_resample <- X[idx, ]
+    y_resample <- y[idx]
+    
+    fit <- cv.glmnet(X_resample, y_resample, alpha = alpha_val)
+    best_lambda <- fit$lambda.min
+    
+    coef_vector <- coef(fit, s = best_lambda)
+    coef_vector <- coef_vector[setdiff(rownames(coef_vector), "(Intercept)"), , drop = FALSE]
+    
+    # Defensive check to ensure dimensions match
+    coef_values <- as.numeric(coef_vector)
+    names(coef_values) <- rownames(coef_vector)
+    
+    # Match current coefficients to full list — fill missing with 0 if needed
+    coef_full <- rep(0, length(coef_names))
+    names(coef_full) <- coef_names
+    coef_full[names(coef_values)] <- coef_values
+    
+    coefs[i, ] <- coef_full
+  }
+  
+  # Create dataframe
+  coef_df <- as.data.frame(coefs)
+  
+  # Summary table
+  coef_summary <- coef_df %>%
+    pivot_longer(cols = everything(), names_to = "PLFA_Group", values_to = "Coefficient") %>%
+    group_by(PLFA_Group) %>%
+    summarise(Mean = mean(Coefficient),
+              Median = median(Coefficient),
+              SD = sd(Coefficient),
+              .groups = "drop")
+  
+  # Optional sanity check
+  cat("\nBootstrap ridge sanity check — variable names:\n")
+  print(colnames(coef_df))
+  
+  cat("\nExample of first row of coefficients:\n")
+  print(coef_df[1, ])
+  
+  return(list(summary = coef_summary, raw = coef_df))
+}
+
+
+library(glmnet)
+
+# Function to calculate performance over repeated train/test splits
+ridge_performance <- function(X, y, n_splits = 50, seed = 2025) {
+  set.seed(seed)
+  test_r2 <- numeric(n_splits)
+  test_mse <- numeric(n_splits)
+  cv_mse <- numeric(n_splits)
+
+  for (i in 1:n_splits) {
+    idx <- sample(seq_len(nrow(X)), size = 0.7 * nrow(X))
+    X_train <- X[idx, ]
+    y_train <- y[idx]
+    X_test  <- X[-idx, ]
+    y_test  <- y[-idx]
+
+    cv_fit <- cv.glmnet(X_train, y_train, alpha = 0)
+    lambda_min <- cv_fit$lambda.min
+
+    preds <- predict(cv_fit, newx = X_test, s = lambda_min)
+    resid <- y_test - preds
+
+    test_r2[i]  <- 1 - sum(resid^2) / sum((y_test - mean(y_test))^2)
+    test_mse[i] <- mean(resid^2)
+    cv_mse[i]   <- min(cv_fit$cvm)
+  }
+
+  return(list(
+    median_r2 = median(test_r2),
+    mean_mse = mean(test_mse),
+    mean_cv_mse = mean(cv_mse),
+    all_r2 = test_r2,
+    all_mse = test_mse
+  ))
+}
+
+
+#nature esque plotting function
+theme_nature <- function(base_size = 12, base_family = "Helvetica") {
+  theme_minimal(base_size = base_size, base_family = base_family) +
+    theme(
+      axis.text = element_text(color = "black"),
+      axis.title.x = element_text( size = base_size), #hjust = 0.38,vjust = -1
+      axis.title.y = element_text(size = base_size),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3),
+      plot.margin = margin(5, 15, 10, 5),
+      legend.position = "right",
+      legend.title = element_blank(),
+      legend.key.height = unit(0.5, "lines"),
+      legend.text = element_text(size = base_size - 1)
+    )
+}
+
+
+
+#Remove any rows with missing values in the relevant columns
+#     This ensures the model has complete cases.
+#using no outlier data, and log trans Fungi. Euk who tf knows
+
+data_lm22 <- na.omit(data_2022[, c("stability", 
+                      "actinomycetes", "am_fungi", 
+                      "gram_negative", "gram_positive", 
+                      "log_fungi", "log_eukaryote", 
+                      "om_perc")])
+
+data_lm23 <- na.omit(data_2023[, c("stability", 
+                                   "actinomycetes", "am_fungi", 
+                      "gram_negative", "gram_positive", 
+                      "log_fungi", "log_eukaryote", 
+                      "om_perc")])
+
+
+
+data_lm22_scaled <- data_lm22 %>%
+  mutate(across(c(stability, actinomycetes, am_fungi, gram_positive, gram_negative, 
+                  log_fungi, log_eukaryote, om_perc), ~ as.numeric(scale(.))))  #need to z-score normalize OMperc and stability, didn't have stability scaled before.
+data_lm23_scaled <- data_lm23 %>%
+  mutate(across(c(stability, actinomycetes, am_fungi, gram_positive, gram_negative, 
+                  log_fungi, log_eukaryote, om_perc), ~ as.numeric(scale(.)))) 
+
+summary(data_lm22_scaled) #mean = 0
+sd(data_lm22_scaled$am_fungi) #sd = 1
+summary(data_lm23_scaled) #mean = 0
+sd(data_lm23_scaled$am_fungi) #sd = 1
+
+
+#      A rule of thumb is VIF > 5 (some say >10) suggests problematic multicollinearity.
+#      High VIF means that predictor is highly correlated with other predictors.
+#So Actino, AMF, GN, GP, are all HIGHLY collin. for both years
+
+#esquisser(data_lm23)
+
+full_model22 <- lm(stability ~ am_fungi + gram_negative + 
+                   gram_positive + actinomycetes + log_eukaryote + log_fungi +
+                   om_perc, data = data_lm22_scaled) 
+
+summary(full_model22) # only OMperc sig
+par(mfrow = c(2, 2))
+plot(full_model22)
+
+vif_values22 <- vif(full_model22)
+vif_values22 
+
+#AMFungi  GramNegative  GramPositive Actinomycetes log_Eukaryote     log_Fungi        OMPerc 
+#15.201221     61.098961     46.278824     25.779458      2.773259      1.899392      3.360675 
+
+full_model23 <- lm(stability ~ am_fungi + gram_negative + 
+                   gram_positive + actinomycetes + log_eukaryote + log_fungi +
+                   om_perc, data = data_lm23_scaled) 
+
+summary(full_model23) # only OMperc sig
+par(mfrow = c(2, 2))
+plot(full_model23) 
+
+vif_values23 <- vif(full_model23)
+vif_values23 
+#AMFungi  GramNegative  GramPositive Actinomycetes log_Eukaryote     log_Fungi        OMPerc 
+#12.919141     35.468566     37.882851     26.561784      2.057834      1.862385      3.820509 
+
+
+#write.csv(data_lm22, "data_matrix_2022.csv")
+#write.csv(data_lm23, "data_matrix_2023.csv")
+#write.csv(data_lm22_scaled, "norm_data_matrix_2022.csv")
+#write.csv(data_lm23_scaled, "norm_data_matrix_2023.csv")
+
+
+
+
+# 2022 data
+X_22 <- model.matrix(stability ~ actinomycetes + am_fungi + gram_positive + 
+                       gram_negative + log_eukaryote + om_perc + log_fungi,  
+                     data = data_lm22_scaled)[, -1]
+y_22 <- data_lm22_scaled$stability
+
+# 2023 data
+X_23 <- model.matrix(stability ~ actinomycetes + am_fungi + gram_positive + 
+                       gram_negative + log_eukaryote + om_perc + log_fungi,  
+                     data = data_lm23_scaled)[, -1]
+y_23 <- data_lm23_scaled$stability
+
+
+ridge_out22 <- bootstrap_ridge(X_22, y_22)
+ridge_out23 <- bootstrap_ridge(X_23, y_23)
+
+ridge_boot22 <- ridge_out22$summary
+ridge_boot23 <- ridge_out23$summary
+
+raw_22 <- ridge_out22$raw %>% mutate(year = "2022")
+raw_23 <- ridge_out23$raw %>% mutate(year = "2023")
+
+
+raw_all <- bind_rows(raw_22, raw_23) %>%
+  pivot_longer(cols = -year, names_to = "PLFA_Group", values_to = "Coefficient")
+
+
+#model performance
+perf_2022 <- ridge_performance(X_22, y_22)
+perf_2023 <- ridge_performance(X_23, y_23)
+
+perf_2022$median_r2  #0.43
+perf_2022$mean_cv_mse  #0.59
+
+perf_2023$median_r2  #0.28
+perf_2023$mean_cv_mse  #0.66
+
+
+#visualize distributions
+
+ggplot(raw_all, aes(x = Coefficient, color = year)) +
+  geom_density(alpha = 0.4) +
+  facet_wrap(~ PLFA_Group, scales = "free") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme_minimal(base_size = 12) +
+  labs(title = "Bootstrap Coefficient Distributions",
+       x = "Bootstrapped Coefficient Value", y = "Density")
+
+
+#combine and order
+
+ridge_ci <- raw_all %>%
+  group_by(PLFA_Group, year) %>%
+  summarise(Median = median(Coefficient),
+            Lower = quantile(Coefficient, 0.025), #90% is 0.05 and 0.95 CI
+            Upper = quantile(Coefficient, 0.975),
+            .groups = "drop")
+
+
+
+ridge_ci <- ridge_ci %>%
+  mutate(PLFA_Group = fct_recode(PLFA_Group,
+                                 "Organic Matter" = "om_perc",
+                                 "Actinobacteria" = "actinomycetes",
+                                 "Gram-Negative\nBacteria" = "gram_negative",
+                                 "AM fungi" = "am_fungi",
+                                 "Eukaryote" = "log_eukaryote",
+                                 "Gram-Positive\nBacteria" = "gram_positive",
+                                 "Fungi" = "log_fungi"))
+
+raw_all <- raw_all %>%
+  mutate(PLFA_Group = fct_recode(PLFA_Group,
+                                 "Organic Matter" = "om_perc",
+                                 "Actinobacteria" = "actinomycetes",
+                                 "Gram-Negative\nBacteria" = "gram_negative",
+                                 "AM Fungi" = "am_fungi",
+                                 "Eukaryote" = "log_eukaryote",
+                                 "Gram-Positive\nBacteria" = "gram_positive",
+                                 "Fungi" = "log_fungi"))
+
+#Define ordered_groups AFTER recoding
+ordered_groups <- ridge_ci %>%
+  filter(year == "2022") %>%
+  arrange(Median) %>%
+  pull(PLFA_Group) %>% as.character()
+
+#Apply ordered factor levels to both ridge_ci and raw_all
+ridge_ci$PLFA_Group <- factor(ridge_ci$PLFA_Group, levels = ordered_groups)
+raw_all$PLFA_Group  <- factor(raw_all$PLFA_Group,  levels = ordered_groups)
+
+
+# Define this y position once, so both use it
+ridge_ci <- ridge_ci %>%
+  mutate(y_pos = as.numeric(fct_reorder(PLFA_Group, Median)) +
+           ifelse(year == "2022", -0.1, 0.1))
+
+#make 2022 first in legend
+raw_all$year <- factor(raw_all$year, levels = c("2022", "2023"))
+
+#plot
+ggplot(raw_all, aes(x = Coefficient, y = PLFA_Group, fill = year)) +
+  geom_density_ridges(alpha = 0.6, scale = 0.8, rel_min_height = 0.01, color = "grey20") +
+  # Add CI as segment at y position — approximate y position by year dodge
+  geom_segment(data = ridge_ci,
+               aes(x = Lower, xend = Upper,
+                   y = y_pos, yend = y_pos,
+                   color = "grey"),
+               linewidth = 0.5, show.legend = FALSE) +
+  # Median point
+  geom_point(data = ridge_ci,
+             aes(x = Median, y = y_pos, fill = year),
+             shape = 21, color = "black", size = 3, stroke = 0.75, show.legend = FALSE) +
+  #0 line
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  labs(
+       x = "Standardized Ridge Coefficient\n(Median ± 95% CI)",
+       y = "PLFA Group") +
+  scale_fill_manual(values = c("2022" = "#1f77b4", "2023" = "darkorange")) +
+  scale_color_manual(values = c("2022" = "#1f77b4", "2023" = "darkorange")) +
+  scale_x_continuous(limits = c(-0.8, 0.8)) +
+  theme_nature()+
+  theme(axis.title.y = element_text(margin = margin(r = 2)),  # reduce right margin
+axis.text.y  = element_text(margin = margin(r = 2)) # tighter label-to-axis spacing
+)
+
+
+# Use ggsave to export
+#ggsave("Figure3_Ridge.pdf", width = 85, height = 120, units = "mm", dpi = 300, device = cairo_pdf)
+
+#ggsave("Figure3_Ridge.tiff", width = 85, height = 120, units = "mm", dpi = 300, compression = "lzw")
+
+#ggsave("Figure3_Ridge.png")
+
+
+#write.csv(raw_all, "raw_all.csv")
+
+
+```
+
