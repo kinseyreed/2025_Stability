@@ -1,0 +1,21 @@
+siteid,latitude,longitude,sand_perc,silt_perc,clay_perc,texture,bulk_density_gcm3,elevation_m,predominant_soil_series,taxonomic_order,taxonomic_class,topography,epa_region_level3,epa_region_level4,sampling_date_2022,sampling_date_2023
+C,obscured,obscured,25.83,66.7,7.5,Silt loam,1.184,315,Berks,Dystrudepts,"Loamy-skeletal, mixed, active, mesic Typic Dystrudepts",Backslope,WesternAlleghenyPlateau,MonongahelaTransitionZone,4/28/2022,9/14/2023
+L,obscured,obscured,54.17,40,5.8,Sandy loam,1.573,384,Gilpin,Hapludults,"Fine-loamy, mixed, active, mesic Typic Hapludults",Backslope,CentralAppalachians,DissectedAppalachainPlataeu,4/22/2022,9/23/2023
+I,obscured,obscured,29.17,62.5,8.3,Silt loam,1.268,349,Ernest,Fragiudults,"Fine-loamy, mixed, superactive, mesic Aquic Fragiudults",Backslope/Footslope,WesternAlleghenyPlateau,PittsburghLowPlateau,5/4/2022,10/4/2023
+T,obscured,obscured,27.5,62.5,10,Silt loam,1.260,149,Poplimento,Hapludults,"Fine, mixed, subactive, mesic Ultic Hapludalfs",Flat,RidgeAndValley,NorthernLimestone_DolomiteValleys,4/24/2022,9/29/2023
+N,obscured,obscured,45,46.7,8.3,Loam,1.093,551,Fenwick,Hapludults,"Fine-loamy, mixed, semiactive, mesic Aquic Hapludults",Summit,CentralAppalachians,ForestedHillsAndMountains,5/3/2022,9/24/2023
+K,obscured,obscured,35,56.7,8.3,Silt loam,1.263,241,Vandalia,Hapludults,"Fine, mixed, active, mesic Typic Hapludalfs",Backslope,WesternAlleghenyPlateau,MonongahelaTransitionZone,4/22/2022,9/22/2023
+O,obscured,obscured,17.5,75,7.5,Silt loam,1.382,221,Coolville,Hapludults,"Fine, mixed, active, mesic Aquultic Hapludalfs",Summit,WesternAlleghenyPlateau,PermianHills,4/19/2022,9/20/2023
+P,obscured,obscured,10.8,80,9.2,Silt/Silt loam,1.273,599,Tilsit,Fragiudults,"Fine-silty, mixed, semiactive, mesic Typic Fragiudults",Summit,CentralAppalachians,ForestedHillsAndMountains,4/16/2022,9/26/2023
+F,obscured,obscured,35.8,56.7,7.5,Silt loam,1.453,440,Berks,Dystrudepts,"Loamy-skeletal, mixed, active, mesic Typic Dystrudepts",Summit,RidgeAndValley,NorthernDissectedRidges,4/25/2022,9/28/2023
+D,obscured,obscured,28.3,58.3,13.3,Silt loam,1.213,535,Latham,Hapludults,"Fine, mixed, semiactive, mesic Aquic Hapludults",Flat,CentralAppalachians,UplandsAndValleysofMixedLandUse,5/2/2022,10/5/2023
+A,obscured,obscured,22.5,65.8,11.7,Silt loam,1.311,531,Latham,Hapludults,"Fine, mixed, semiactive, mesic Aquic Hapludults",Flat,CentralAppalachians,UplandsAndValleysofMixedLandUse,5/2/2022,10/5/2023
+B,obscured,obscured,24.2,65.8,10,Silt loam,1.051,533,Latham,Hapludults,"Fine, mixed, semiactive, mesic Aquic Hapludults",Flat,CentralAppalachians,UplandsAndValleysofMixedLandUse,5/2/2022,10/5/2023
+M,obscured,obscured,20.0,70,10,Silt loam,1.170,287,Galia,Paleudalfs,"Fine-loamy, siliceous, active, mesic Typic Paleudalfs",Backslope/Shoulder,WesternAlleghenyPlateau,PermianHills,4/20/2022,9/19/2023
+H,obscured,obscured,23.3,66.7,10,Silt loam,1.277,246,Monongahela,Fragiudults,"Fine-loamy, mixed, semiactive, mesic Typic Fragiudults",Footslope,RidgeAndValley,NorthernShaleValleys,4/26/2022,9/27/2023
+Q,obscured,obscured,NA,NA,NA,NA,0.995,610,Frederick,Paleudalfs,"Fine, mixed, semiactive, mesic Typic Paleudults",Flat,CentralAppalachians,GreenbrierKarst,4/18/2022,NA
+R,obscured,obscured,40.8,50.8,8.3,Loam/Silt loam,1.439,393,Lehew,Dystrudepts,"Loamy-skeletal, siliceous, semiactive, mesic Typic Dystrudepts",Footslope,RidgeAndValley,NorthernShaleValleys,4/25/2022,9/28/2023
+G,obscured,obscured,32.5,57.5,10,Silt loam,1.258,356,Gilpin,Hapludults,"Fine-loamy, mixed, active, mesic Typic Hapludults",Flat,WesternAlleghenyPlateau,MonongahelaTransitionZone,4/21/2022,9/21/2023
+J,obscured,obscured,22.5,58.3,19.2,Silt loam,1.136,168,Oaklet,Paleudalfs,"Very-fine, mixed, semiactive, mesic Vertic Paleudalfs",Flat,RidgeAndValley,NorthernLimestone_DolomiteValleys,4/24/2022,9/29/2023
+S,obscured,obscured,44.2,34.2,21.7,Loam,1.449,365,Fairplay,Endoaquolls,"Fine-loamy, carbonatic, mesic Fluvaquentic Endoaquolls",Flat,WesternAlleghenyPlateau,PittsburghLowPlateau,4/27/2022,9/15/2023
+E,obscured,obscured,24.2,64.2,11.7,Silt loam,1.326,642,Frederick,Paleudalfs,"Fine, mixed, semiactive, mesic Typic Paleudults",Shoulder/Summit,CentralAppalachians,GreenbrierKarst,4/16/2022,9/25/2023
